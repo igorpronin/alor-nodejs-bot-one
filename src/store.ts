@@ -13,12 +13,14 @@ interface IStore {
   fortsInstrumentsRaw: IInstrument[]
   symbolsList: string[],
   instrumentsDataByTickers: {[key: string]: IInstrumentsDataByTickers}
+  accessToken: null | string
 }
 
 const store: IStore = {
   fortsInstrumentsRaw: [],
   symbolsList: [],
-  instrumentsDataByTickers: {}
+  instrumentsDataByTickers: {},
+  accessToken: null
 }
 
 export default store;

@@ -5,6 +5,7 @@ import axios from 'axios';
 import moment from 'moment';
 import store from './store';
 import ask from './interface';
+import {API_URL, getAccessToken, getPortfolios} from './alor';
 import WebSocket from 'ws';
 
 import Instrument, {addOrUpdateInstrument, IInstrument, getAllInstruments} from './models/instruments';
@@ -12,10 +13,6 @@ import InstrumentType, {addInstrumentType} from './models/instrument_types';
 import Setting, {addSetting, getSettingRowByParam, updateSettingVal} from './models/settings';
 
 const toSync = false;
-
-const OAUTH_URL = 'https://oauth.alor.ru';
-const API_URL = 'https://api.alor.ru';
-const API_WS_URL = 'wss://api.alor.ru/ws';
 
 const scheduleDaily9am = '0 9 * * *';
 
@@ -98,17 +95,6 @@ const syncDB = async (): Promise<void> => {
     addBaseInstrumentTypes(),
     addBaseSettings()
   ])
-}
-
-const getAccessToken = async (): Promise<string | null> => {
-  toScreen({mesOrData: 'Запрашивается Access Token...'});
-  const accessToken = (await axios.post(`${OAUTH_URL}/refresh?token=${process.env.ALOR_REFRESH_TOKEN}`)).data.AccessToken;
-  if (accessToken) {
-    toScreen({mesOrData: 'Access Token получен'});
-    return accessToken;
-  }
-  toScreen({mesOrData: 'Ошибка при получении Access Token', level: 'e'});
-  return null;
 }
 
 // returns instruments list
@@ -198,16 +184,25 @@ const getAndHandleInstrumentsFORTS = async () => {
   return null;
 }
 
+const getAndHandlePortfoliosList = async () => {
+  const portfolios = await getPortfolios();
+  await saveDataToFile({data: portfolios, filename: 'portfolios_list.json'});
+}
+
 const run = async () => {
   try {
     if (toSync) await syncDB();
     const accessToken = await getAccessToken();
-    if (!accessToken) process.exit(1);
+    if (!accessToken) {
+      process.exit(1);
+    } else {
+      store.accessToken = `Bearer ${accessToken}`;
+    }
     await checkAndUpdateIfNeededInstrumentsFORTS();
+    await getAndHandlePortfoliosList();
     await fillStore();
     task.start();
-    await ask();
-    // handleStatsAllTickers();
+    // await ask();
   } catch (e) {
     toScreen({mesOrData: e});
     handleError(e);
