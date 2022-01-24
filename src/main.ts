@@ -1,16 +1,29 @@
 require('dotenv').config();
+import cron from 'node-cron';
 const {toScreen, debug, handleError, saveDataToFile} = require('../utils');
 import axios from 'axios';
+import moment from 'moment';
 import WebSocket from 'ws';
+
+const toSync = true;
 
 import Instrument from './models/instruments';
 import InstrumentType, {addInstrumentType} from './models/instrument_types';
+import Setting, {addSetting, getSettingRowByParam, updateSettingVal} from './models/settings';
 
 const OAUTH_URL = 'https://oauth.alor.ru';
 const API_URL = 'https://api.alor.ru';
 const API_WS_URL = 'wss://api.alor.ru/ws';
 
-const addInstrumentTypes = async () => {
+const scheduleDaily9am = '0 9 * * *';
+
+const task = cron.schedule(scheduleDaily9am, async () =>  {
+  await getAndHandleInstrumentsFORTS();
+}, {
+  scheduled: false
+});
+
+const addBaseInstrumentTypes = async () => {
   await Promise.all([
     addInstrumentType(1, 'Фьючерсный контракт'),
     addInstrumentType(2, 'Календарный спред'),
@@ -20,13 +33,21 @@ const addInstrumentTypes = async () => {
   ])
 }
 
+const addBaseSettings = async () => {
+  await Promise.all([
+    addSetting('forts_instruments_list_update_date', null, null)
+  ])
+}
+
 const syncDB = async (): Promise<void> => {
   await Promise.all([
     Instrument.sync({alter: true}),
-    InstrumentType.sync({alter: true})
+    InstrumentType.sync({alter: true}),
+    Setting.sync({alter: true})
   ]);
   await Promise.all([
-    addInstrumentTypes()
+    addBaseInstrumentTypes(),
+    addBaseSettings()
   ])
 }
 
@@ -90,6 +111,7 @@ const getAndHandleInstrumentsFORTS = async () => {
       promises.push(Instrument.create(row));
     }
     await Promise.all(promises);
+    await updateSettingVal('forts_instruments_list_update_date', moment().format());
     return instruments;
   }
   toScreen({mesOrData: 'Ошибка при получении списка инструментов FORTS', level: 'e'});
@@ -98,10 +120,13 @@ const getAndHandleInstrumentsFORTS = async () => {
 
 const run = async () => {
   try {
-    await syncDB();
+    if (toSync) await syncDB();
     const accessToken = await getAccessToken();
     if (!accessToken) process.exit(1);
     const instrumentsFORTS = await getAndHandleInstrumentsFORTS();
+    const fortsUpdateRow = await getSettingRowByParam('forts_instruments_list_update_date');
+    const fortsUpdateDate = fortsUpdateRow.value;
+    task.start();
   } catch (e) {
     toScreen({mesOrData: e});
     handleError(e);
