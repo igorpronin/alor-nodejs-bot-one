@@ -7,7 +7,7 @@ import WebSocket from 'ws';
 
 const toSync = true;
 
-import Instrument from './models/instruments';
+import Instrument, {addOrUpdateInstrument, IInstrument} from './models/instruments';
 import InstrumentType, {addInstrumentType} from './models/instrument_types';
 import Setting, {addSetting, getSettingRowByParam, updateSettingVal} from './models/settings';
 
@@ -20,7 +20,8 @@ const scheduleDaily9am = '0 9 * * *';
 const task = cron.schedule(scheduleDaily9am, async () =>  {
   await getAndHandleInstrumentsFORTS();
 }, {
-  scheduled: false
+  scheduled: false,
+  timezone: 'GMT'
 });
 
 const addBaseInstrumentTypes = async () => {
@@ -62,6 +63,23 @@ const getAccessToken = async (): Promise<string | null> => {
   return null;
 }
 
+const checkAndUpdateIfNeededInstrumentsFORTS = async () => {
+  toScreen({mesOrData: 'Проверка необходимости обновления списка инструментов FORTS...'});
+  const fortsUpdateRow = await getSettingRowByParam('forts_instruments_list_update_date');
+  if (fortsUpdateRow && fortsUpdateRow.value) {
+    const fortsInstrumentsUpdateDate = moment(fortsUpdateRow.value);
+    const areDatesTheSame = moment().isSame(fortsInstrumentsUpdateDate, 'day');
+    if (!areDatesTheSame) {
+      toScreen({mesOrData: 'Список инструментов FORTS НЕ актуальный, запрашивается актуальный список...'});
+      await getAndHandleInstrumentsFORTS();
+    } else {
+      toScreen({mesOrData: 'Список инструментов FORTS актуальный, обновление не требуется'});
+    }
+  } else {
+    await getAndHandleInstrumentsFORTS();
+  }
+}
+
 const getAndHandleInstrumentsFORTS = async () => {
   toScreen({mesOrData: 'Запрашивается список инструментов FORTS...'});
   const instruments = (await axios(`${API_URL}/md/v2/Securities?sector=FORTS&limit=1000000`)).data;
@@ -71,7 +89,7 @@ const getAndHandleInstrumentsFORTS = async () => {
     const promises = []
     for (let i = 0; i < instruments.length; i++) {
       const inst = instruments[i];
-      const row = {
+      const row: IInstrument = {
         symbol: inst.symbol,
         shortname: inst.shortname,
         type: inst.type,
@@ -108,10 +126,10 @@ const getAndHandleInstrumentsFORTS = async () => {
       } else if (inst.type.includes('Фьючерсный')) {
         row.type_code = 1;
       }
-      promises.push(Instrument.create(row));
+      promises.push(addOrUpdateInstrument(row));
     }
     await Promise.all(promises);
-    await updateSettingVal('forts_instruments_list_update_date', moment().format());
+    await updateSettingVal('forts_instruments_list_update_date', moment().toISOString());
     return instruments;
   }
   toScreen({mesOrData: 'Ошибка при получении списка инструментов FORTS', level: 'e'});
@@ -123,9 +141,7 @@ const run = async () => {
     if (toSync) await syncDB();
     const accessToken = await getAccessToken();
     if (!accessToken) process.exit(1);
-    const instrumentsFORTS = await getAndHandleInstrumentsFORTS();
-    const fortsUpdateRow = await getSettingRowByParam('forts_instruments_list_update_date');
-    const fortsUpdateDate = fortsUpdateRow.value;
+    await checkAndUpdateIfNeededInstrumentsFORTS();
     task.start();
   } catch (e) {
     toScreen({mesOrData: e});

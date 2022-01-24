@@ -42,7 +42,8 @@ const debug = (any) => {
 
 // level: c - critical
 const handleError = (error, level) => {
-  console.log('TODO ERR HANDLER!')
+  console.log('TODO ERR HANDLER!');
+  console.log(error);
   // logify(error, 'error!', 'error');
   // if (level === 'c') process.exit(1);
 }

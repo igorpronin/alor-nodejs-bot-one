@@ -1,8 +1,37 @@
+const {handleError} = require('../../utils');
 import sequelize from '../db';
 import {DataTypes} from 'sequelize';
 
-// https://alor.dev/docs#model-security
+export interface IInstrument {
+  symbol: string
+  shortname: string
+  type: string
+  type_code: number
+  lotsize: number
+  facevalue: number
+  cfi_code: string
+  cancellation: string
+  minstep: number
+  rating: number
+  marginbuy: number
+  marginsell: number
+  marginrate: number
+  pricestep: number
+  price_max: number
+  price_min: number
+  theor_price: number
+  theor_price_limit: number
+  volatility: number
+  currency: string
+  isin: string
+  yield: string
+  primary_board: string
+  trading_status: number
+  trading_status_info: string
+  complex_product_category: string
+}
 
+// https://alor.dev/docs#model-security
 const Instrument = sequelize.define('instruments', {
   symbol: {
     type: DataTypes.STRING,
@@ -87,5 +116,18 @@ const Instrument = sequelize.define('instruments', {
 }, {
   // Other model options go here
 });
+
+export const addOrUpdateInstrument = async (data: IInstrument) => {
+  try {
+    const result = await Instrument.upsert(data);
+    if (result && result[0]) {
+      return result[0].getDataValue('symbol') === data.symbol;
+    }
+    return null;
+  } catch (e) {
+    handleError(e);
+    return null;
+  }
+}
 
 export default Instrument;
