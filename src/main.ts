@@ -1,15 +1,17 @@
 require('dotenv').config();
+const {toScreen, handleError, saveDataToFile} = require('../utils');
 import cron from 'node-cron';
-const {toScreen, debug, handleError, saveDataToFile} = require('../utils');
 import axios from 'axios';
 import moment from 'moment';
+import store from './store';
+import ask from './interface';
 import WebSocket from 'ws';
 
-const toSync = true;
-
-import Instrument, {addOrUpdateInstrument, IInstrument} from './models/instruments';
+import Instrument, {addOrUpdateInstrument, IInstrument, getAllInstruments} from './models/instruments';
 import InstrumentType, {addInstrumentType} from './models/instrument_types';
 import Setting, {addSetting, getSettingRowByParam, updateSettingVal} from './models/settings';
+
+const toSync = false;
 
 const OAUTH_URL = 'https://oauth.alor.ru';
 const API_URL = 'https://api.alor.ru';
@@ -19,10 +21,56 @@ const scheduleDaily9am = '0 9 * * *';
 
 const task = cron.schedule(scheduleDaily9am, async () =>  {
   await getAndHandleInstrumentsFORTS();
+  await fillStore();
 }, {
   scheduled: false,
-  timezone: 'GMT'
+  timezone: 'UTC'
 });
+
+const aggregateTickers = () => {
+  const result: any = {}
+  store.symbolsList.forEach((symbol, i) => {
+    if (!result[symbol]) {
+      result[symbol] = {
+        optionsFar: [],
+        optionsNear: [],
+        futures: [],
+        futureDatesList: new Set(),
+        optionsDatesList: new Set()
+      }
+    }
+  })
+  store.fortsInstrumentsRaw.forEach(item => {
+    if (item.base_symbol) {
+      if (item.type_code === 1) {
+        result[item.base_symbol].futures.push(item);
+        const date = moment(item.cancellation).format('DD-MM-YYYY');
+        result[item.base_symbol].futureDatesList.add(date);
+      }
+      if (item.type_code === 3) {
+        result[item.base_symbol].optionsFar.push(item);
+        const date = moment(item.cancellation).format('DD-MM-YYYY');
+        result[item.base_symbol].optionsDatesList.add(date);
+      }
+      if (item.type_code === 4) {
+        result[item.base_symbol].optionsNear.push(item);
+        const date = moment(item.cancellation).format('DD-MM-YYYY');
+        result[item.base_symbol].optionsDatesList.add(date);
+      }
+    }
+  })
+  store.instrumentsDataByTickers = result;
+}
+
+const fillStore = async () => {
+  store.fortsInstrumentsRaw = await getAllInstruments(true);
+  const symbolsSet = new Set();
+  store.fortsInstrumentsRaw.forEach(item => {
+    if (item.base_symbol) symbolsSet.add(item.base_symbol);
+  })
+  store.symbolsList = Array.from(symbolsSet) as string[];
+  aggregateTickers();
+}
 
 const addBaseInstrumentTypes = async () => {
   await Promise.all([
@@ -63,6 +111,7 @@ const getAccessToken = async (): Promise<string | null> => {
   return null;
 }
 
+// returns instruments list
 const checkAndUpdateIfNeededInstrumentsFORTS = async () => {
   toScreen({mesOrData: 'Проверка необходимости обновления списка инструментов FORTS...'});
   const fortsUpdateRow = await getSettingRowByParam('forts_instruments_list_update_date');
@@ -94,6 +143,8 @@ const getAndHandleInstrumentsFORTS = async () => {
         shortname: inst.shortname,
         type: inst.type,
         type_code: 9,
+        base_symbol: null,
+        base_asset: null,
         lotsize: inst.lotsize,
         facevalue: inst.facevalue,
         cfi_code: inst.cfiCode,
@@ -125,6 +176,17 @@ const getAndHandleInstrumentsFORTS = async () => {
         row.type_code = 2;
       } else if (inst.type.includes('Фьючерсный')) {
         row.type_code = 1;
+        const base = row.symbol.split('-')[0];
+        row.base_symbol = base;
+        row.base_asset = base;
+      }
+      if (row.type_code === 3 || row.type_code === 4) {
+        const parts = row.symbol.split('-');
+        const base = parts[0];
+        const tail = parts[1];
+        const baseAssetDate = tail.split('M')[0];
+        row.base_symbol = base;
+        row.base_asset = `${base}-${baseAssetDate}`;
       }
       promises.push(addOrUpdateInstrument(row));
     }
@@ -142,7 +204,10 @@ const run = async () => {
     const accessToken = await getAccessToken();
     if (!accessToken) process.exit(1);
     await checkAndUpdateIfNeededInstrumentsFORTS();
+    await fillStore();
     task.start();
+    await ask();
+    // handleStatsAllTickers();
   } catch (e) {
     toScreen({mesOrData: e});
     handleError(e);

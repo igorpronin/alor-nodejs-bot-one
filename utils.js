@@ -91,11 +91,20 @@ const readFile = (path) => {
   })
 }
 
+const pause = (timeout = 1500) => {
+  return new Promise((resolve) => {
+    setTimeout(() => {
+      resolve();
+    }, timeout)
+  })
+}
+
 module.exports = {
   debug,
   toScreen,
   saveFile,
   saveDataToFile,
   handleError,
-  readFile
+  readFile,
+  pause
 }

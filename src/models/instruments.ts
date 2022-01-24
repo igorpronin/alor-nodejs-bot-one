@@ -7,6 +7,8 @@ export interface IInstrument {
   shortname: string
   type: string
   type_code: number
+  base_symbol: string | null
+  base_asset: string | null
   lotsize: number
   facevalue: number
   cfi_code: string
@@ -43,6 +45,12 @@ const Instrument = sequelize.define('instruments', {
   },
   type_code: {
     type: DataTypes.INTEGER
+  },
+  base_symbol: {
+    type: DataTypes.STRING
+  },
+  base_asset: {
+    type: DataTypes.STRING
   },
   type: {
     type: DataTypes.TEXT
@@ -128,6 +136,17 @@ export const addOrUpdateInstrument = async (data: IInstrument) => {
     handleError(e);
     return null;
   }
+}
+
+export const getAllInstruments = async (orderByBaseSymbol?: boolean) => {
+  const options: any = {}
+  if (orderByBaseSymbol) {
+    options.order = [
+      ['base_symbol', 'ASC']
+    ]
+  }
+  const instruments = await Instrument.findAll(options);
+  return instruments.map(instrument => instrument.get());
 }
 
 export default Instrument;
