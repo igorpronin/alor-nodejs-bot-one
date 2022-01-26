@@ -1,12 +1,16 @@
 const {toScreen, handleError, pause} = require('../utils');
 import inquirer from 'inquirer';
 import store from './store';
+import {hasOptions} from './configure';
 // import moment from 'moment';
 
 const handleAction = async (answer: string) => {
   switch (answer) {
     case 'stats':
       await askStats();
+      break;
+    case 'configure':
+      await askConfigure();
       break;
     case 'close':
       toScreen({mesOrData: 'Завершено!'});
@@ -32,6 +36,55 @@ const handleStatsAction = async (answer: string) => {
   }
 }
 
+const handleConfigureAction = async (answer: string) => {
+  switch (answer) {
+    case 'trade_option':
+      await handleConfigureOptionTrading();
+      await askConfigure();
+      break;
+    case 'back':
+      await ask();
+      break;
+  }
+}
+
+const handleConfigureOptionTrading = async () => {
+  toScreen({mesOrData: 'Введите тикер или пустое значение для возврата в предыдущее меню...', level: 'w'});
+  const ticker = await askTicker();
+  if (ticker === '') return;
+  if (!hasOptions(ticker)) {
+    toScreen({mesOrData: `Для тикера ${ticker} нет доступных опционов, выберите другой тикер...`, level: 'w'});
+    await handleConfigureOptionTrading();
+    return;
+  }
+  const strategyAnswer = await askOptionStrategy();
+  if (strategyAnswer === 'to_start') {
+    await handleConfigureOptionTrading();
+    return;
+  }
+  const directionAnswer = await askDirection();
+  if (directionAnswer === 'to_start') {
+    await handleConfigureOptionTrading();
+    return;
+  }
+  if (directionAnswer === 'sell') {
+    toScreen({mesOrData: 'Внимание! Непокрытые продажи не предусмотрены алгоритмом робота. Проверьте наличие открытых длинных позиций по выбранному опциону.', level: 'w'});
+  }
+  const cancellationDate = await askOptionsDate(ticker);
+  if (directionAnswer === 'to_start') {
+    await handleConfigureOptionTrading();
+    return;
+  }
+  const strike = await askOptionsStrike(ticker, cancellationDate);
+  if (strike === 'to_start') {
+    await handleConfigureOptionTrading();
+    return;
+  }
+  console.log(strike);
+  const instrument = store.instrumentsDataByTickers[ticker].optionsByCancellationDate[cancellationDate].byStrikes[strike]
+  console.log(instrument);
+}
+
 const handleStatsAllTickers = () => {
   let counter = 0;
   for (let key in store.instrumentsDataByTickers) {
@@ -46,6 +99,27 @@ const handleStatsAllTickers = () => {
     mes += `    ${extraSpace}даты опционов: ${tickerGroup.optionsDatesList.size}, `;
     mes += `даты фьючерсов: ${tickerGroup.futureDatesList.size}`;
     toScreen({mesOrData: mes});
+  }
+}
+
+const handleStatsOneTicker = async () => {
+  toScreen({mesOrData: 'Введите тикер для продолжения или пустое значение для возврата в предыдущее меню...', level: 'w'});
+  const ticker = await askTicker();
+  if (ticker === '') return;
+  const action = await askTickerAction(ticker);
+  switch (action) {
+    case 'ticker_options':
+      showTickerOptions(ticker);
+      break;
+    case 'ticker_futures':
+      showTickerFutures(ticker);
+      break;
+    case 'options_dates':
+      showTickerOptionsDates(ticker);
+      break;
+    case 'futures_dates':
+      showTickerFuturesDates(ticker);
+      break;
   }
 }
 
@@ -95,11 +169,99 @@ const askTicker = async () => {
   return ticker;
 }
 
-const askTickerAction = async () => {
+const askOptionStrategy = async () => {
+  const actions = {
+    type: 'list',
+    name: 'answer',
+    message: 'Какую стратегию использовать? (Подробнее о стратегиях в README.md)',
+    choices: [
+      {
+        name: 'Покупка/продажа ордером с равномерным периодическим изменением цены',
+        value: 'option_fisherman'
+      },
+      {
+        name: 'В начало',
+        value: 'to_start'
+      }
+    ],
+  }
+  const questions = [actions];
+  const {answer} = await inquirer.prompt(questions);
+  return answer;
+}
+
+const askOptionsDate = async (ticker: string) => {
+  const choices: any = [];
+  const actions = {
+    type: 'list',
+    name: 'answer',
+    message: 'Дата погашения опциона?',
+    choices
+  }
+  const tickerInstruments = store.instrumentsDataByTickers[ticker];
+  tickerInstruments.optionsDatesList.forEach(one => choices.push(one));
+  choices.push({
+    name: 'В начало',
+    value: 'to_start'
+  });
+  const questions = [actions];
+  const {answer} = await inquirer.prompt(questions);
+  return answer;
+}
+
+const askOptionsStrike = async (ticker: string, date: string) => {
+  const choices: any = [];
+  const actions = {
+    type: 'list',
+    name: 'answer',
+    message: 'Страйк опциона?',
+    choices
+  }
+  const tickerInstruments = store.instrumentsDataByTickers[ticker].optionsByCancellationDate[date];
+  const strikes = tickerInstruments.strikesList;
+  strikes.sort(function(a, b) {
+    return a - b;
+  });
+  strikes.forEach(one => choices.push(one));
+  choices.push({
+    name: 'В начало',
+    value: 'to_start'
+  });
+  const questions = [actions];
+  const {answer} = await inquirer.prompt(questions);
+  return answer;
+}
+
+const askDirection = async () => {
+  const actions = {
+    type: 'list',
+    name: 'answer',
+    message: 'Какое направление сделки',
+    choices: [
+      {
+        name: 'Покупка',
+        value: 'buy'
+      },
+      {
+        name: 'Продажа',
+        value: 'sell'
+      },
+      {
+        name: 'В начало',
+        value: 'to_start'
+      }
+    ],
+  }
+  const questions = [actions];
+  const {answer} = await inquirer.prompt(questions);
+  return answer;
+}
+
+const askTickerAction = async (ticker: string) => {
   const actions = {
     type: 'list',
     name: 'action',
-    message: 'Информация по тикеру',
+    message: `Какую информацию по тикеру ${ticker} показать?`,
     choices: [
       {
         name: 'Список опционов по тикеру',
@@ -124,27 +286,6 @@ const askTickerAction = async () => {
   return action;
 }
 
-export const handleStatsOneTicker = async () => {
-  toScreen({mesOrData: 'Введите тикер или пустое значение для возврата в предыдущее меню...', level: 'w'});
-  const ticker = await askTicker();
-  if (ticker === '') return;
-  const action = await askTickerAction();
-  switch (action) {
-    case 'ticker_options':
-      showTickerOptions(ticker);
-      break;
-    case 'ticker_futures':
-      showTickerFutures(ticker);
-      break;
-    case 'options_dates':
-      showTickerOptionsDates(ticker);
-      break;
-    case 'futures_dates':
-      showTickerFuturesDates(ticker);
-      break;
-  }
-}
-
 export const ask = async () => {
   const actions = {
     type: 'list',
@@ -152,12 +293,16 @@ export const ask = async () => {
     message: 'Что сделать?',
     choices: [
       {
-        name: 'Статистика и данные',
+        name: 'Показать статистику и данные',
         value: 'stats'
       },
       {
+        name: 'Настроить торговые операции',
+        value: 'configure'
+      },
+      {
         name: 'Запустить скрипт',
-        value: 'run_main'
+        value: 'run'
       },
       {
         name: 'Завершить',
@@ -204,6 +349,31 @@ export const askStats = async () => {
   try {
     const answers = await inquirer.prompt(questions);
     await handleStatsAction(answers.action);
+  } catch (e: any) {
+    handleError(e);
+  }
+}
+
+export const askConfigure = async () => {
+  const actions = {
+    type: 'list',
+    name: 'action',
+    message: 'Настройка торговых операций, что сделать?',
+    choices: [
+      {
+        name: 'Добавить сделку с опционом',
+        value: 'trade_option'
+      },
+      {
+        name: 'Назад',
+        value: 'back'
+      }
+    ]
+  }
+  const questions = [actions];
+  try {
+    const answers = await inquirer.prompt(questions);
+    await handleConfigureAction(answers.action);
   } catch (e: any) {
     handleError(e);
   }

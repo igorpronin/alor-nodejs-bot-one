@@ -7,7 +7,6 @@ const OAUTH_URL = 'https://oauth.alor.ru';
 export const API_URL = 'https://api.alor.ru';
 const API_WS_URL = 'wss://api.alor.ru/ws';
 
-
 export const getAccessToken = async (): Promise<string | null> => {
   toScreen({mesOrData: 'Запрашивается Access Token...'});
   const accessToken = (await axios.post(`${OAUTH_URL}/refresh?token=${process.env.ALOR_REFRESH_TOKEN}`)).data.AccessToken;

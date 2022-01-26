@@ -1,8 +1,15 @@
 import {IInstrument} from './models/instruments';
 
+interface IOptionsByCancellationDate {
+  all: IInstrument[],
+  strikesList: number[],
+  byStrikes: {[key: string]: IInstrument}
+}
+
 interface IInstrumentsDataByTickers {
   optionsFar: IInstrument[]
   optionsNear: IInstrument[]
+  optionsByCancellationDate: {[key: string]: IOptionsByCancellationDate}
   futures: IInstrument[]
   futureDatesList: Set<string>
   optionsDatesList: Set<string>

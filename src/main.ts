@@ -31,6 +31,7 @@ const aggregateTickers = () => {
       result[symbol] = {
         optionsFar: [],
         optionsNear: [],
+        optionsByCancellationDate: {},
         futures: [],
         futureDatesList: new Set(),
         optionsDatesList: new Set()
@@ -46,13 +47,24 @@ const aggregateTickers = () => {
       }
       if (item.type_code === 3) {
         result[item.base_symbol].optionsFar.push(item);
-        const date = moment(item.cancellation).format('DD-MM-YYYY');
-        result[item.base_symbol].optionsDatesList.add(date);
       }
       if (item.type_code === 4) {
         result[item.base_symbol].optionsNear.push(item);
+      }
+      if (item.type_code === 3 || item.type_code === 4) {
         const date = moment(item.cancellation).format('DD-MM-YYYY');
         result[item.base_symbol].optionsDatesList.add(date);
+        if (!result[item.base_symbol].optionsByCancellationDate[date]) {
+          result[item.base_symbol].optionsByCancellationDate[date] = {
+            all: [],
+            strikesList: [],
+            byStrikes: {}
+          }
+        }
+        const {strike} = defineOptionParams(item.symbol);
+        result[item.base_symbol].optionsByCancellationDate[date].byStrikes[strike] = item;
+        result[item.base_symbol].optionsByCancellationDate[date].strikesList.push(strike);
+        result[item.base_symbol].optionsByCancellationDate[date].all.push(item);
       }
     }
   })
@@ -115,6 +127,17 @@ const checkAndUpdateIfNeededInstrumentsFORTS = async () => {
   }
 }
 
+const defineOptionParams = (symbol: string) => {
+  const parts = symbol.split('-');
+  const params: any = {};
+  params.base = parts[0];
+  const tail = parts[1];
+  const tailParts = tail.split('M');
+  params.baseAssetDate = tailParts[0];
+  params.strike = Number(tailParts[1].split('A')[1]);
+  return params;
+}
+
 const getAndHandleInstrumentsFORTS = async () => {
   toScreen({mesOrData: 'Запрашивается список инструментов FORTS...'});
   const instruments = (await axios(`${API_URL}/md/v2/Securities?sector=FORTS&limit=1000000`)).data;
@@ -131,6 +154,7 @@ const getAndHandleInstrumentsFORTS = async () => {
         type_code: 9,
         base_symbol: null,
         base_asset: null,
+        strike: null,
         lotsize: inst.lotsize,
         facevalue: inst.facevalue,
         cfi_code: inst.cfiCode,
@@ -167,12 +191,10 @@ const getAndHandleInstrumentsFORTS = async () => {
         row.base_asset = base;
       }
       if (row.type_code === 3 || row.type_code === 4) {
-        const parts = row.symbol.split('-');
-        const base = parts[0];
-        const tail = parts[1];
-        const baseAssetDate = tail.split('M')[0];
+        const {base, baseAssetDate, strike} = defineOptionParams(row.symbol);
         row.base_symbol = base;
         row.base_asset = `${base}-${baseAssetDate}`;
+        row.strike = strike;
       }
       promises.push(addOrUpdateInstrument(row));
     }
@@ -202,7 +224,7 @@ const run = async () => {
     await getAndHandlePortfoliosList();
     await fillStore();
     task.start();
-    // await ask();
+    await ask();
   } catch (e) {
     toScreen({mesOrData: e});
     handleError(e);

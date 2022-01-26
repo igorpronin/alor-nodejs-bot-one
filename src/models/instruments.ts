@@ -9,9 +9,11 @@ export interface IInstrument {
   type_code: number
   base_symbol: string | null
   base_asset: string | null
+  strike: number | null
   lotsize: number
   facevalue: number
   cfi_code: string
+  // cancellation_short: string
   cancellation: string
   minstep: number
   rating: number
@@ -52,6 +54,9 @@ const Instrument = sequelize.define('instruments', {
   base_asset: {
     type: DataTypes.STRING
   },
+  strike: {
+    type: DataTypes.NUMBER
+  },
   type: {
     type: DataTypes.TEXT
   },
@@ -64,6 +69,9 @@ const Instrument = sequelize.define('instruments', {
   cfi_code: {
     type: DataTypes.STRING
   },
+  // cancellation_short: {
+  //   type: DataTypes.STRING
+  // },
   cancellation: {
     type: DataTypes.STRING
   },

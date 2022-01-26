@@ -1,5 +1,5 @@
 {
   "ignore": ["data/*"],
   "delay": 2500,
-  "restartable": true
+  "restartable": false
 }
